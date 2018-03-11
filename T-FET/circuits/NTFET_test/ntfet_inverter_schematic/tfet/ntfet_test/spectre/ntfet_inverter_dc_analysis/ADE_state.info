@@ -1,0 +1,3 @@
+projectDir = '"~/simulation"
+designInfo = '("tfet" "ntfet_test" "ntfet_inverter_dc" "spectre")
+descriptionText = "None"
