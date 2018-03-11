@@ -1,0 +1,202 @@
+// VerilogA for tfet, HNTFET, veriloga
+
+`include "constants.vams"
+`include "disciplines.vams"
+
+
+
+`include "discipline.h"
+
+`define n_type 1
+`define p_type -1
+`define CHARGE 1.6021918e-19
+`define M0 9.1095e-31
+`define H 6.62606957e-34
+`define HBAR 1.05458e-34
+`define KB 1.3806488E-23
+`define PI 3.141592653
+`define EPS0 8.85418782e-12
+`define VDSMIN 1e-12
+`define DELTA 5
+`define VMIN 0.001
+`define AMIN 1u
+
+module HNTFET(drain, gate, source);
+  inout drain, gate, source;
+  electrical drain, gate, source;
+  electrical drainprime, gateprime, sourceprime;
+
+  // instance parameters
+  parameter real w = 1e-6;
+  parameter real l = 2e-8;
+
+  parameter real alpha = 1.14;
+  parameter real beta = 0.02;
+  parameter real cgs0 = 6.9e-11;
+
+  //drain-source current parameters
+  parameter real e0 = 0.527e8;
+  parameter real eg = 0.354;
+  parameter real eta = 0.1;
+  parameter real gamma0 = 0.06;
+  parameter real gammac = 0.18;
+  parameter real j0 = 1e7;
+  parameter real jp = 2e8;
+  parameter real k = 2;
+  parameter real lambda = 0.33;
+  parameter real mr = 0.012;
+  parameter real n1 = 1.8;
+  parameter real n2 = 1.1;
+  parameter real r0 = 0.17;
+  parameter real r1 = 0.01;
+  parameter real r2 = 0.83;
+  parameter real rdw = 0;
+  parameter real rgwl = 0;
+  parameter real rsw = 0;
+  parameter real s = 1;
+  parameter real tch = 10e-9;
+  parameter real voff = 0.00;
+  parameter real vp = 0.05;
+  parameter real vth = 0.076;
+
+  //fixed capacitances parameters
+  parameter real cfdw = 0.5e-15;
+  parameter real cfsw = 0.5e-15;
+  parameter real cgdew = 0;
+  parameter real cgsew = 0;
+  parameter real eot = 0.2n;
+
+  parameter real gamma1 = 0;
+  parameter real k0 = 0;
+  parameter real k1 = 1;
+  parameter real mc = 2;
+  parameter real epsi = 3.9;
+  parameter integer type = `n_type;
+  parameter real vndr = 0.1;
+
+
+  real vds, vsd, vdse, vsde, vgs, vgd, mrvalue, egvalue, u0, a, b, ag, bg, eps, ru, gamma, vthds, vthdsa, gi, r0p, deltas;
+  real g;
+  real vgt, vgo, vgoe, vgoen, f, u, e, id;
+  real vgta, vgoa, vgoea, vgoena, fa, ua, ea, ida, idr;
+  real rd, rg, rs, gd, gg, gs;
+  real cgde, cgse;
+  real ci, cgs, cgd, cgdmax, cgdmin, ac, ace, vgse;
+
+  analog
+    begin
+      @(initial_step or initial_step("static"))
+        begin
+          u0 = n1*$vt;
+          mrvalue = mr*`M0;
+          egvalue = eg*`CHARGE;
+          ru = r0*u0;
+          r0p = 1-r0;
+          deltas = `DELTA*`DELTA;
+          a = w*tch*`CHARGE*`CHARGE*`CHARGE/(8*`PI*`PI*`HBAR*`HBAR)*sqrt(2*mrvalue/egvalue);
+          b = 4*egvalue*sqrt(2*mrvalue*egvalue)/(3*`CHARGE*`HBAR);
+          eps = epsi*`EPS0;
+          cgde = cgdew*w*1e6;
+          cgse = cgsew*w*1e6;
+          ci = `EPS0*epsi*w*l/eot;
+          cgdmax = 0.9*ci;
+          cgdmin = 0.13*ci;
+
+          rd = rdw/(w*1e6);
+          rg = rgwl*w/l;
+          rs = rsw/(w*1e6);
+          if(rd > 0)
+            gd = 1/rd;
+          else
+            gd = 0;
+          if(rg > 0)
+            gg = 1/rg;
+          else
+            gg = 0;
+          if(rs > 0)
+            gs = 1/rs;
+          else
+            gs = 0;
+        end
+      vds = type*V(drainprime,sourceprime);
+      vgd = type*V(gateprime,drainprime);
+      vgs = type*V(gateprime,sourceprime);
+      vgt  = vgs-vth;
+      vdse = `VDSMIN*(0.5*vds/`VDSMIN+sqrt(deltas+(0.5*vds/`VDSMIN-1)*(0.5*vds/`VDSMIN-1))-sqrt(deltas+1));
+
+
+      // id-vds continuity equation, di-biasing
+      g = 0.5 * (tanh((vds+3*vndr)/vndr) + 1);
+
+
+      // main drain-source tunneling current
+      vgo  = vgs-voff;
+      vgoe = `VMIN*(1+0.5*vgo/`VMIN+sqrt(deltas+(0.5*vgo/`VMIN-1)*(0.5*vgo/`VMIN-1)));
+      vgoen = vgoe/(vth-voff);
+      gamma = gamma0 + gamma1*vgoe;
+      gi = 1/gamma;
+      vthds = lambda*tanh(k0+k1*vgo);
+      f = (1-limexp(-vds*gi))/(1+limexp((vthds-vds)*gi));
+      u = ru+r0p*u0*vgoen;
+      e = e0*(1+r1*vds+r2*vgoe);
+      id = a*f*u*ln(1+limexp((vgt)/u))*e*limexp(-b/e)*g;
+
+
+      // ambipolar drain-source current
+      vgta = -vgs+2*voff-vth;
+      vgoa  = -vgo;
+      vthdsa = lambda*tanh(k0+k1*vgoa);
+      vgoea = `VMIN*(1+0.5*vgoa/`VMIN+sqrt(deltas+(0.5*vgoa/`VMIN-1)*(0.5*vgoa/`VMIN-1)));
+      vgoena = vgoea/(vth-voff);
+      fa = (1-limexp(-vdse*gi))/(1+limexp((vthdsa-vdse)*gi));
+      ua = ru+r0p*u0*vgoena;
+      ea = e0*(1+r1*vdse+r2*vgoea);
+      ida = s*a*fa*ua*ln(1+limexp((vgta)/ua))*ea*limexp(-b/ea) * g;
+
+
+      // RTD drain-source current
+      vsd = -vds;
+      vsde = vdse;
+      idr = -w*tch*(jp*(vsde/vp)*k*vgoe*limexp(1+(-vsde+eta*vgs)/vp) + j0*(limexp(vsd/n2/$vt)-1));
+
+      id = id + ida + idr;
+
+
+      //capacitance calculations
+      vgse = `VMIN*(1+0.5*vgs/`VMIN+sqrt(deltas+(0.5*vgs/`VMIN-1)*(0.5*vgs/`VMIN-1)));
+      ac = ((1+beta*pow(vgse,mc))-limexp(-vgoe/gammac))/(1+limexp((vth+alpha*vdse-vgoe)/gammac));
+      ace = `AMIN*(1+0.5*ac/`AMIN+sqrt(deltas+(0.5*ac/`AMIN-1)*(0.5*ac/`AMIN-1)));
+      cgs = cgs0*w;
+      cgd = cgdmin + (cgdmax - cgdmin)*ace;
+
+
+      // Augment the matrix
+      I(gateprime,sourceprime) <+ type*cgs*ddt(vgs);
+      I(gateprime,drainprime) <+ type*cgd*ddt(vgd);
+      I(drainprime,sourceprime) <+ type*id;
+      I(gate,drain) <+ type*(ddt(cgde*V(gate,drain)));
+      I(gate,source) <+ type*ddt(cgse*V(gate,source));
+
+      if(rd > 0)
+        begin
+          I(drain,drainprime) <+ gd*V(drain,drainprime);
+        end
+      else
+        V(drain,drainprime) <+ 0.0;
+      if(rs > 0)
+        begin
+          I(source,sourceprime) <+ gs*V(source,sourceprime);
+        end
+      else
+        V(source,sourceprime) <+ 0.0;
+      if(rg > 0)
+        begin
+          I(gate,gateprime) <+ gg*V(gate,gateprime);
+        end
+      else
+        V(gate,gateprime) <+ 0.0;
+    end
+endmodule
+
+
+
